@@ -11,3 +11,5 @@ build/
 *.avi
 *.so
 *.txt
+
+.idea
