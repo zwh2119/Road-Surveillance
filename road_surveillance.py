@@ -1,6 +1,6 @@
 import cv2
 
-from car_detection import CarDetection
+from car_detection.car_detection_trt import CarDetection
 from car_tracking.deep_sort import build_tracker
 from car_tracking.utils.parser import get_config
 

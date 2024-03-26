@@ -341,7 +341,6 @@ class CarDetection:
             batch_origin_h.append(origin_h)
             batch_origin_w.append(origin_w)
 
-            # TODO: performance bottlenecks
             np.copyto(batch_input_image[i], input_image)
 
         batch_input_image = np.ascontiguousarray(batch_input_image)
