@@ -13,3 +13,5 @@ build/
 *.txt
 
 .idea
+*.pt
+*.pth

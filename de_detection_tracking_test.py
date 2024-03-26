@@ -5,12 +5,8 @@ import cv2
 import os
 from tqdm import tqdm
 
-from road_surveillance import RoadSurveillance
-from car_tracking.simple.deep_sort import build_tracker
+
 from car_detection.simple.car_detection import CarDetection as detection
-from car_detection.trt.car_detection_trt import CarDetection as detection_trt
-from car_tracking.simple.utils.parser import get_config
-from car_tracking.trt import car_tracking_trt
 
 
 def warm_up(model, base_dir, gt_path, warm_number):
@@ -105,106 +101,65 @@ def calculate_map(predictions, ground_truths, iou_threshold=0.5):
     return mAP
 
 
-def detection_tracking_delay_test_simple_detection():
+def detection_tracking_delay_test():
     detector_simple = detection({
         'weights': 'yolov5s.pt',
-        'device': 0
+        'device': 2
     })
 
     video_dir = '/data/edge_computing_dataset/UA-DETRAC/Insight-MVT_Annotation_Train'
     gt_file = '/data/edge_computing_dataset/UA-DETRAC/train_gt.txt'
 
+    # warm_up(detector_trt, video_dir, gt_file, 100)
     warm_up(detector_simple, video_dir, gt_file, 100)
 
     result = None
     prob = None
 
     detector_simple_delay = []
+    detector_trt_delay = []
+    tracker_simple_delay = []
+    tracker_trt_delay = []
 
     with open(gt_file, 'r') as gt_f:
         gt = gt_f.readlines()
-        gt = gt[:1000]
+        gt = gt[:100]
 
     for i in tqdm(gt):
         info = i.split(' ')
         pic_path = os.path.join(video_dir, info[0])
         frame = cv2.imread(pic_path)
+
+        # if result and prob:
+            # start_time = time.time()
+            # # tracker_simple.update(np.asarray(result), np.asarray(prob), frame)
+            # end_time = time.time()
+            # tracker_simple_delay.append(end_time - start_time)
+
+        # start_time = time.time()
+        # response = detector_trt([frame])
+        # result = response['result'][0]
+        # prob = response['probs'][0]
+        #
+        # end_time = time.time()
+        # detector_trt_delay.append(end_time - start_time)
 
         start_time = time.time()
         response = detector_simple([frame])
         result = response['result'][0]
-        # print(f'{result=}')
+        print(len(result))
         prob = response['probs'][0]
-        # print(f'{prob=}')
+
         end_time = time.time()
         detector_simple_delay.append(end_time - start_time)
 
-    print(f'【detector】 simple:{np.mean(detector_simple_delay):.4f}s ')
+    print(f'【detector】 simple:{np.mean(detector_simple_delay):.4f}s')
 
 
-def detection_tracking_delay_test_other():
-    detector_trt = detection_trt({
-        'weights': '/home/hx/zwh/Auto-Edge/batch_test/yolov5s_batch1.engine',
-        'plugin_library': '/home/hx/zwh/Auto-Edge/batch_test/libbatch1plugins.so',
-        'batch_size': 1,
-        'device': 0
-    })
 
-    cfg = get_config()
-    cfg.merge_from_file('car_tracking/simple/configs/deep_sort.yaml')
-    cfg.USE_FASTREID = False
-    tracker_simple = build_tracker(cfg, use_cuda=True)
-
-    video_dir = '/data/edge_computing_dataset/UA-DETRAC/Insight-MVT_Annotation_Train'
-    gt_file = '/data/edge_computing_dataset/UA-DETRAC/train_gt.txt'
-
-    warm_up(detector_trt, video_dir, gt_file, 100)
-
-    result = None
-    prob = None
-
-    detector_trt_delay = []
-    tracker_trt_delay = []
-    tracker_simple_delay = []
-
-    with open(gt_file, 'r') as gt_f:
-        gt = gt_f.readlines()
-        gt = gt[:1000]
-
-    for i in tqdm(gt):
-        info = i.split(' ')
-        pic_path = os.path.join(video_dir, info[0])
-        frame = cv2.imread(pic_path)
-
-        if result and prob:
-            start_time = time.time()
-            car_tracking_trt.update(result, prob, frame)
-            end_time = time.time()
-            tracker_trt_delay.append(end_time - start_time)
-
-        if result and prob:
-            start_time = time.time()
-            tracker_simple.update(np.asarray(result), np.asarray(prob), frame)
-            end_time = time.time()
-            tracker_simple_delay.append(end_time - start_time)
-
-        start_time = time.time()
-        response = detector_trt([frame])
-        result = response['result'][0]
-        prob = response['probs'][0]
-
-        end_time = time.time()
-        detector_trt_delay.append(end_time - start_time)
-
-    print(f'【detector】 trt:{np.mean(detector_trt_delay):.4f}s ')
-    print(f'【tracker】  simple:{np.mean(tracker_simple_delay):.4f}s')
-    print(f'【tracker】  trt:{np.mean(tracker_trt_delay):.4f}s')
-
-
-def batch_delay_test():
-    server = RoadSurveillance
+# def batch_delay_test():
+#     server = RoadSurveillance
 
 
 if __name__ == '__main__':
-    # detection_tracking_delay_test_simple_detection()
-    detection_tracking_delay_test_other()
+    detection_tracking_delay_test()
