@@ -147,7 +147,7 @@ def detection_tracking_delay_test():
         start_time = time.time()
         response = detector_simple([frame])
         result = response['result'][0]
-        print(len(result))
+        # print(len(result))
         prob = response['probs'][0]
 
         end_time = time.time()

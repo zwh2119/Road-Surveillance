@@ -1,3 +1,4 @@
+import random
 import time
 
 import numpy as np
@@ -5,12 +6,15 @@ import cv2
 import os
 from tqdm import tqdm
 
-from road_surveillance import RoadSurveillance
+
 from car_tracking.simple.deep_sort import build_tracker
 from car_detection.simple.car_detection import CarDetection as detection
 from car_detection.trt.car_detection_trt import CarDetection as detection_trt
 from car_tracking.simple.utils.parser import get_config
 from car_tracking.trt import car_tracking_trt
+
+from car_tracking.trt.deep_sort.utils.parser import get_config
+from car_tracking.trt.deep_sort.deep_sort import DeepSort
 
 
 def warm_up(model, base_dir, gt_path, warm_number):
@@ -105,47 +109,10 @@ def calculate_map(predictions, ground_truths, iou_threshold=0.5):
     return mAP
 
 
-def detection_tracking_delay_test_simple_detection():
-    detector_simple = detection({
-        'weights': 'yolov5s.pt',
-        'device': 0
-    })
-
-    video_dir = '/data/edge_computing_dataset/UA-DETRAC/Insight-MVT_Annotation_Train'
-    gt_file = '/data/edge_computing_dataset/UA-DETRAC/train_gt.txt'
-
-    warm_up(detector_simple, video_dir, gt_file, 100)
-
-    result = None
-    prob = None
-
-    detector_simple_delay = []
-
-    with open(gt_file, 'r') as gt_f:
-        gt = gt_f.readlines()
-        gt = gt[:1000]
-
-    for i in tqdm(gt):
-        info = i.split(' ')
-        pic_path = os.path.join(video_dir, info[0])
-        frame = cv2.imread(pic_path)
-
-        start_time = time.time()
-        response = detector_simple([frame])
-        result = response['result'][0]
-        # print(f'{result=}')
-        prob = response['probs'][0]
-        # print(f'{prob=}')
-        end_time = time.time()
-        detector_simple_delay.append(end_time - start_time)
-
-    print(f'【detector】 simple:{np.mean(detector_simple_delay):.4f}s ')
-
-
-def detection_tracking_delay_test_other():
+def detection_tracking_delay_test():
     detector_trt = detection_trt({
-        'weights': '/home/hx/zwh/Auto-Edge/batch_test/yolov5s_batch1.engine',
-        'plugin_library': '/home/hx/zwh/Auto-Edge/batch_test/libbatch1plugins.so',
+        'weights': '~/zwh/Auto-Edge/batch_test/yolov5s_batch1.engine',
+        'plugin_library': '~/zwh/Auto-Edge/batch_test/libbatch1plugins.so',
         'batch_size': 1,
         'device': 0
     })
@@ -154,6 +121,14 @@ def detection_tracking_delay_test_other():
     cfg.merge_from_file('car_tracking/simple/configs/deep_sort.yaml')
     cfg.USE_FASTREID = False
     tracker_simple = build_tracker(cfg, use_cuda=True)
+
+    cfg_trt = get_config()
+    cfg_trt.merge_from_file("car_tracking/trt/deep_sort/configs/deep_sort.yaml")
+    tracker_trt = DeepSort(cfg.DEEPSORT.REID_CKPT,
+                           max_dist=cfg.DEEPSORT.MAX_DIST, min_confidence=cfg.DEEPSORT.MIN_CONFIDENCE,
+                           nms_max_overlap=cfg.DEEPSORT.NMS_MAX_OVERLAP, max_iou_distance=cfg.DEEPSORT.MAX_IOU_DISTANCE,
+                           max_age=cfg.DEEPSORT.MAX_AGE, n_init=cfg.DEEPSORT.N_INIT, nn_budget=cfg.DEEPSORT.NN_BUDGET,
+                           use_cuda=True)
 
     video_dir = '/data/edge_computing_dataset/UA-DETRAC/Insight-MVT_Annotation_Train'
     gt_file = '/data/edge_computing_dataset/UA-DETRAC/train_gt.txt'
@@ -169,16 +144,18 @@ def detection_tracking_delay_test_other():
 
     with open(gt_file, 'r') as gt_f:
         gt = gt_f.readlines()
-        gt = gt[:1000]
-
+        gt = gt[:100]
+        # gt = random.sample(gt, 100)
     for i in tqdm(gt):
         info = i.split(' ')
         pic_path = os.path.join(video_dir, info[0])
         frame = cv2.imread(pic_path)
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
         if result and prob:
             start_time = time.time()
-            car_tracking_trt.update(result, prob, frame)
+
+            tracker_trt.update(car_tracking_trt.xyxy_to_xywh(np.asarray(result)), prob, frame)
             end_time = time.time()
             tracker_trt_delay.append(end_time - start_time)
 
@@ -192,6 +169,7 @@ def detection_tracking_delay_test_other():
         response = detector_trt([frame])
         result = response['result'][0]
         prob = response['probs'][0]
+        print(f'object number: {len(result)}')
 
         end_time = time.time()
         detector_trt_delay.append(end_time - start_time)
@@ -206,5 +184,4 @@ def batch_delay_test():
 
 
 if __name__ == '__main__':
-    # detection_tracking_delay_test_simple_detection()
-    detection_tracking_delay_test_other()
+    detection_tracking_delay_test()

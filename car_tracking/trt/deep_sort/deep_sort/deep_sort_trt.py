@@ -32,22 +32,34 @@ class DeepSort(object):
         self.tracker = Tracker(metric, max_iou_distance=max_iou_distance, max_age=max_age, n_init=n_init)
 
     def update(self, bbox_xywh, confidences, ori_img):
+        time1 = time.time()
         self.height, self.width = ori_img.shape[:2]
         # generate detections
         features = self._get_features(bbox_xywh, ori_img)
+        print(f'trt-time1:{time.time()-time1}')
+        time2 = time.time()
         bbox_tlwh = self._xywh_to_tlwh(bbox_xywh)
         detections = [Detection(bbox_tlwh[i],  conf, features[i]) for i, conf in enumerate(confidences) if
                       conf > self.min_confidence]
+
+        print(f'trt-time2:{time.time()-time2}')
+        time3 = time.time()
 
         # run on non-maximum supression
         boxes = np.array([d.tlwh for d in detections])
         scores = np.array([d.confidence for d in detections])
         indices = non_max_suppression(boxes, self.nms_max_overlap, scores)
         detections = [detections[i] for i in indices]
+        print(f'trt-time3:{time.time()-time3}')
+        time3_5 = time.time()
 
         # update tracker
         self.tracker.predict()
+        print(f'trt-time3.5:{time.time()-time3_5}')
+        time4 = time.time()
         self.tracker.update(detections)
+        print(f'trt-time4:{time.time()-time4}')
+        time5 = time.time()
 
         # output bbox identities
         outputs = []
@@ -60,6 +72,9 @@ class DeepSort(object):
             outputs.append(np.array([x1, y1, x2, y2, track_id],dtype=np.int))
         if len(outputs) > 0:
             outputs = np.stack(outputs, axis=0)
+
+        print(f'trt-time5:{time.time()-time5}')
+
         return outputs
 
     """

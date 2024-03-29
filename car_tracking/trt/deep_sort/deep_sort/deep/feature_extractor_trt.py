@@ -132,6 +132,9 @@ class TrackerExtractor:
         # Remove any context from the top of the context stack, deactivating it.
         self.cfx.pop()
 
+    def __del__(self):
+        self.destroy()
+
 
 if __name__ == '__main__':
     img = cv2.imread("demo.jpg")[:,:,(2,1,0)]

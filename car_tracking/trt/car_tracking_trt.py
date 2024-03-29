@@ -9,17 +9,23 @@ Created on 2021/5/24 13:46
 """
 import cv2
 import numpy as np
+import torch
 
-from .deep_sort.utils.parser import get_config
-from .deep_sort.deep_sort import DeepSort
 
-cfg = get_config()
-cfg.merge_from_file("car_tracking/trt/deep_sort/configs/deep_sort.yaml")
-deepsort = DeepSort(cfg.DEEPSORT.REID_CKPT,
-                    max_dist=cfg.DEEPSORT.MAX_DIST, min_confidence=cfg.DEEPSORT.MIN_CONFIDENCE,
-                    nms_max_overlap=cfg.DEEPSORT.NMS_MAX_OVERLAP, max_iou_distance=cfg.DEEPSORT.MAX_IOU_DISTANCE,
-                    max_age=cfg.DEEPSORT.MAX_AGE, n_init=cfg.DEEPSORT.N_INIT, nn_budget=cfg.DEEPSORT.NN_BUDGET,
-                    use_cuda=True)
+def xyxy_to_xywh(boxes_xyxy):
+    if isinstance(boxes_xyxy, torch.Tensor):
+        boxes_xywh = boxes_xyxy.clone()
+    elif isinstance(boxes_xyxy, np.ndarray):
+        boxes_xywh = boxes_xyxy.copy()
+    else:
+        assert None, 'error'
+
+    boxes_xywh[:, 0] = (boxes_xyxy[:, 0] + boxes_xyxy[:, 2]) / 2.
+    boxes_xywh[:, 1] = (boxes_xyxy[:, 1] + boxes_xyxy[:, 3]) / 2.
+    boxes_xywh[:, 2] = boxes_xyxy[:, 2] - boxes_xyxy[:, 0]
+    boxes_xywh[:, 3] = boxes_xyxy[:, 3] - boxes_xyxy[:, 1]
+
+    return boxes_xywh
 
 
 def draw_bboxes(image, bboxes, line_thickness):
@@ -59,27 +65,27 @@ def draw_bboxes(image, bboxes, line_thickness):
     return image
 
 
-def update(bboxes, confidence,image):
-    bbox_xywh = []
-    bboxes2draw = []
-
-    if len(bboxes) > 0:
-        for x1, y1, x2, y2, in bboxes:
-            obj = [
-                int((x1 + x2) / 2), int((y1 + y2) / 2),
-                x2 - x1, y2 - y1
-            ]
-            bbox_xywh.append(obj)
-
-        xywhs = np.array(bbox_xywh)
-        confss = np.array(confidence)
-
-        outputs = deepsort.update(xywhs, confss, image)
-
-        for value in list(outputs):
-            x1, y1, x2, y2, track_id = value
-            bboxes2draw.append((int(x1), int(y1), int(x2), int(y2),  int(track_id)))
-        pass
-    pass
-
-    return bboxes2draw
+# def update(bboxes, confidence,image):
+#     bbox_xywh = []
+#     bboxes2draw = []
+#
+#     if len(bboxes) > 0:
+#         for x1, y1, x2, y2, in bboxes:
+#             obj = [
+#                 int((x1 + x2) / 2), int((y1 + y2) / 2),
+#                 x2 - x1, y2 - y1
+#             ]
+#             bbox_xywh.append(obj)
+#
+#         xywhs = np.array(bbox_xywh)
+#         confss = np.array(confidence)
+#
+#         outputs = deepsort.update(xywhs, confss, image)
+#
+#         for value in list(outputs):
+#             x1, y1, x2, y2, track_id = value
+#             bboxes2draw.append((int(x1), int(y1), int(x2), int(y2),  int(track_id)))
+#         pass
+#     pass
+#
+#     return bboxes2draw
