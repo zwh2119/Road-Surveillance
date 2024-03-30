@@ -2,6 +2,42 @@ import cv2
 import numpy as np
 
 
+def update_bounding_boxes(bounding_boxes, old_points, new_points, status):
+    """
+    Updates bounding box positions based on the average movement of tracked points.
+
+    Parameters:
+    - bounding_boxes: List of current bounding boxes as (x, y, w, h).
+    - old_points: Numpy array of points in the previous frame.
+    - new_points: Numpy array of points in the current frame.
+    - status: Numpy array indicating whether each point has been successfully tracked (1) or not (0).
+
+    Returns:
+    - Updated list of bounding boxes.
+    """
+    updated_boxes = []
+    point_movements = new_points - old_points
+
+    for box in bounding_boxes:
+        # Extract points that are within this bounding box
+        x, y, w, h = box
+        points_in_box = (old_points[:, 0, 0] >= x) & (old_points[:, 0, 0] < x + w) & \
+                        (old_points[:, 0, 1] >= y) & (old_points[:, 0, 1] < y + h)
+        if not np.any(points_in_box & (status == 1)):
+            # If no points were successfully tracked for this box, don't update its position
+            updated_boxes.append(box)
+            continue
+
+        # Calculate average movement for points successfully tracked within this box
+        average_movement = np.mean(point_movements[points_in_box & (status == 1)], axis=0)
+
+        # Update box position
+        updated_box = (x + int(average_movement[0, 0]), y + int(average_movement[0, 1]), w, h)
+        updated_boxes.append(updated_box)
+
+    return updated_boxes
+
+
 def select_key_points(bounding_boxes, gray_image, max_corners=100, quality_level=0.01, min_distance=10):
     """
     Selects key points within car bounding boxes using the Shi-Tomasi corner detection algorithm.
@@ -44,5 +80,15 @@ def select_key_points(bounding_boxes, gray_image, max_corners=100, quality_level
     return points
 
 
-def tracking(prev_frame, bbox, present_frame):
-    pass
+def tracking(prev_detection_frame, bbox, tracking_frame_list):
+    grey_prev_frame = cv2.cvtColor(prev_detection_frame, cv2.COLOR_BGR2GRAY)
+    key_points = select_key_points(bbox, grey_prev_frame)
+    for present_frame in tracking_frame_list:
+        grey_present_frame = cv2.cvtColor(present_frame, cv2.COLOR_BGR2GRAY)
+        new_points, status, error = cv2.calcOpticalFlowPyrLK(grey_prev_frame, grey_present_frame, key_points, None)
+
+        if len(key_points) > 0 and len(new_points) > 0:
+            bbox = update_bounding_boxes(bbox, key_points, new_points, status)
+        grey_prev_frame = grey_present_frame.copy()
+        key_points = new_points[status == 1].reshape(-1, 1, 2)
+
