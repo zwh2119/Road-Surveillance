@@ -383,7 +383,7 @@ class CarDetection:
             cnt = 0
             size = 0
             for j in range(len(result_boxes)):
-                box = result_boxes[j]
+                box = [int(x) for x in result_boxes[j]]
                 box_class = self.categories[int(result_classid[j])]
                 score = result_scores[j]
                 if box_class in self.target_categories:

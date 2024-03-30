@@ -6,15 +6,15 @@ import cv2
 import os
 from tqdm import tqdm
 
-
-from car_tracking.simple.deep_sort import build_tracker
+# from car_tracking.simple.deep_sort import build_tracker
 from car_detection.simple.car_detection import CarDetection as detection
 from car_detection.trt.car_detection_trt import CarDetection as detection_trt
-from car_tracking.simple.utils.parser import get_config
+# from car_tracking.simple.utils.parser import get_config
 from car_tracking.trt import car_tracking_trt
 
-from car_tracking.trt.deep_sort.utils.parser import get_config
-from car_tracking.trt.deep_sort.deep_sort import DeepSort
+# from car_tracking.trt.deep_sort.utils.parser import get_config
+# from car_tracking.trt.deep_sort.deep_sort import DeepSort
+from car_tracking.optical_flow import optical_flow
 
 
 def warm_up(model, base_dir, gt_path, warm_number):
@@ -111,24 +111,24 @@ def calculate_map(predictions, ground_truths, iou_threshold=0.5):
 
 def detection_tracking_delay_test():
     detector_trt = detection_trt({
-        'weights': '~/zwh/Auto-Edge/batch_test/yolov5s_batch1.engine',
-        'plugin_library': '~/zwh/Auto-Edge/batch_test/libbatch1plugins.so',
+        'weights': '/home/nvidia/zwh/Auto-Edge/batch_test/yolov5s_batch1.engine',
+        'plugin_library': '/home/nvidia/zwh/Auto-Edge/batch_test/libbatch1plugins.so',
         'batch_size': 1,
         'device': 0
     })
 
-    cfg = get_config()
-    cfg.merge_from_file('car_tracking/simple/configs/deep_sort.yaml')
-    cfg.USE_FASTREID = False
-    tracker_simple = build_tracker(cfg, use_cuda=True)
-
-    cfg_trt = get_config()
-    cfg_trt.merge_from_file("car_tracking/trt/deep_sort/configs/deep_sort.yaml")
-    tracker_trt = DeepSort(cfg.DEEPSORT.REID_CKPT,
-                           max_dist=cfg.DEEPSORT.MAX_DIST, min_confidence=cfg.DEEPSORT.MIN_CONFIDENCE,
-                           nms_max_overlap=cfg.DEEPSORT.NMS_MAX_OVERLAP, max_iou_distance=cfg.DEEPSORT.MAX_IOU_DISTANCE,
-                           max_age=cfg.DEEPSORT.MAX_AGE, n_init=cfg.DEEPSORT.N_INIT, nn_budget=cfg.DEEPSORT.NN_BUDGET,
-                           use_cuda=True)
+    # cfg = get_config()
+    # cfg.merge_from_file('car_tracking/simple/configs/deep_sort.yaml')
+    # cfg.USE_FASTREID = False
+    # tracker_simple = build_tracker(cfg, use_cuda=True)
+    #
+    # cfg_trt = get_config()
+    # cfg_trt.merge_from_file("car_tracking/trt/deep_sort/configs/deep_sort.yaml")
+    # tracker_trt = DeepSort(cfg.DEEPSORT.REID_CKPT,
+    #                        max_dist=cfg.DEEPSORT.MAX_DIST, min_confidence=cfg.DEEPSORT.MIN_CONFIDENCE,
+    #                        nms_max_overlap=cfg.DEEPSORT.NMS_MAX_OVERLAP, max_iou_distance=cfg.DEEPSORT.MAX_IOU_DISTANCE,
+    #                        max_age=cfg.DEEPSORT.MAX_AGE, n_init=cfg.DEEPSORT.N_INIT, nn_budget=cfg.DEEPSORT.NN_BUDGET,
+    #                        use_cuda=True)
 
     video_dir = '/data/edge_computing_dataset/UA-DETRAC/Insight-MVT_Annotation_Train'
     gt_file = '/data/edge_computing_dataset/UA-DETRAC/train_gt.txt'
@@ -146,24 +146,28 @@ def detection_tracking_delay_test():
         gt = gt_f.readlines()
         gt = gt[:100]
         # gt = random.sample(gt, 100)
+    frame = None
     for i in tqdm(gt):
         info = i.split(' ')
         pic_path = os.path.join(video_dir, info[0])
+        prev_frame = frame
         frame = cv2.imread(pic_path)
-        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        print(f'frame size:{frame.shape}')
+        # frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
         if result and prob:
             start_time = time.time()
 
-            tracker_trt.update(car_tracking_trt.xyxy_to_xywh(np.asarray(result)), prob, frame)
+            # tracker_trt.update(car_tracking_trt.xyxy_to_xywh(np.asarray(result)), prob, frame)
+            optical_flow.tracking(prev_frame, result, [frame])
             end_time = time.time()
             tracker_trt_delay.append(end_time - start_time)
 
-        if result and prob:
-            start_time = time.time()
-            tracker_simple.update(np.asarray(result), np.asarray(prob), frame)
-            end_time = time.time()
-            tracker_simple_delay.append(end_time - start_time)
+        # if result and prob:
+        #     start_time = time.time()
+        #     tracker_simple.update(np.asarray(result), np.asarray(prob), frame)
+        #     end_time = time.time()
+        #     tracker_simple_delay.append(end_time - start_time)
 
         start_time = time.time()
         response = detector_trt([frame])
@@ -175,7 +179,7 @@ def detection_tracking_delay_test():
         detector_trt_delay.append(end_time - start_time)
 
     print(f'【detector】 trt:{np.mean(detector_trt_delay):.4f}s ')
-    print(f'【tracker】  simple:{np.mean(tracker_simple_delay):.4f}s')
+    # print(f'【tracker】  simple:{np.mean(tracker_simple_delay):.4f}s')
     print(f'【tracker】  trt:{np.mean(tracker_trt_delay):.4f}s')
 
 

@@ -1,5 +1,24 @@
+import time
+
 import cv2
 import numpy as np
+import torch
+
+
+def xyxy_to_xywh(boxes_xyxy):
+    if isinstance(boxes_xyxy, torch.Tensor):
+        boxes_xywh = boxes_xyxy.clone()
+    elif isinstance(boxes_xyxy, np.ndarray):
+        boxes_xywh = boxes_xyxy.copy()
+    else:
+        assert None, 'error'
+
+    boxes_xywh[:, 0] = (boxes_xyxy[:, 0] + boxes_xyxy[:, 2]) / 2.
+    boxes_xywh[:, 1] = (boxes_xyxy[:, 1] + boxes_xyxy[:, 3]) / 2.
+    boxes_xywh[:, 2] = boxes_xyxy[:, 2] - boxes_xyxy[:, 0]
+    boxes_xywh[:, 3] = boxes_xyxy[:, 3] - boxes_xyxy[:, 1]
+
+    return boxes_xywh
 
 
 def update_bounding_boxes(bounding_boxes, old_points, new_points, status):
@@ -21,24 +40,32 @@ def update_bounding_boxes(bounding_boxes, old_points, new_points, status):
     for box in bounding_boxes:
         # Extract points that are within this bounding box
         x, y, w, h = box
-        points_in_box = (old_points[:, 0, 0] >= x) & (old_points[:, 0, 0] < x + w) & \
-                        (old_points[:, 0, 1] >= y) & (old_points[:, 0, 1] < y + h)
-        if not np.any(points_in_box & (status == 1)):
-            # If no points were successfully tracked for this box, don't update its position
+        points_in_box = ((old_points[:, 0, 0] >= x) & (old_points[:, 0, 0] < x + w) &
+                         (old_points[:, 0, 1] >= y) & (old_points[:, 0, 1] < y + h)).reshape(-1)
+
+        valid_points_in_box = points_in_box & (status.flatten() == 1)
+
+        if not np.any(valid_points_in_box):
             updated_boxes.append(box)
             continue
 
-        # Calculate average movement for points successfully tracked within this box
-        average_movement = np.mean(point_movements[points_in_box & (status == 1)], axis=0)
+        average_movement = np.mean(point_movements[valid_points_in_box], axis=0).reshape(-1)
 
-        # Update box position
-        updated_box = (x + int(average_movement[0, 0]), y + int(average_movement[0, 1]), w, h)
+        if average_movement.size != 2:
+            # If average_movement does not have exactly 2 elements, skip updating this box
+            print("Error calculating average movement. Expected size 2, got:", average_movement.size)
+            updated_boxes.append(box)
+            continue
+
+        # Safely access the average movements
+        dx, dy = average_movement[0], average_movement[1]
+        updated_box = (x + int(dx), y + int(dy), w, h)
         updated_boxes.append(updated_box)
 
     return updated_boxes
 
 
-def select_key_points(bounding_boxes, gray_image, max_corners=100, quality_level=0.01, min_distance=10):
+def select_key_points(bounding_boxes, gray_image, max_corners=40, quality_level=0.01, min_distance=20):
     """
     Selects key points within car bounding boxes using the Shi-Tomasi corner detection algorithm.
 
@@ -77,18 +104,36 @@ def select_key_points(bounding_boxes, gray_image, max_corners=100, quality_level
         # If no points were found, return an empty array with the correct shape
         points = np.empty((0, 1, 2), dtype=np.float32)
 
+    print(f'total points: {len(points)}')
     return points
 
 
 def tracking(prev_detection_frame, bbox, tracking_frame_list):
+    bbox = xyxy_to_xywh(np.asarray(bbox))
+    print(bbox)
+    time1 = time.time()
     grey_prev_frame = cv2.cvtColor(prev_detection_frame, cv2.COLOR_BGR2GRAY)
+    print(f'time1: {time.time() - time1}')
+    time2 = time.time()
     key_points = select_key_points(bbox, grey_prev_frame)
+    print(f'time2: {time.time() - time2}')
+    time3 = time.time()
     for present_frame in tracking_frame_list:
+        print(f'time3: {time.time() - time3}')
+        time4 = time.time()
         grey_present_frame = cv2.cvtColor(present_frame, cv2.COLOR_BGR2GRAY)
         new_points, status, error = cv2.calcOpticalFlowPyrLK(grey_prev_frame, grey_present_frame, key_points, None)
+        print(f'time4: {time.time() - time4}')
+        time5 = time.time()
 
         if len(key_points) > 0 and len(new_points) > 0:
             bbox = update_bounding_boxes(bbox, key_points, new_points, status)
+        else:
+            print('no bbox')
+        print(f'time5: {time.time() - time5}')
+        time6 = time.time()
+
         grey_prev_frame = grey_present_frame.copy()
         key_points = new_points[status == 1].reshape(-1, 1, 2)
 
+        print(f'time6: {time.time() - time6}')
