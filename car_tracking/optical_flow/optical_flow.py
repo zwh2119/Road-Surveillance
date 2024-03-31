@@ -20,6 +20,22 @@ def xyxy_to_xywh(boxes_xyxy):
 
     return boxes_xywh
 
+def xywh_to_xyxy(boxes_xywh):
+    if isinstance(boxes_xywh, torch.Tensor):
+        boxes_xyxy = boxes_xywh.clone()
+    elif isinstance(boxes_xywh, np.ndarray):
+        boxes_xyxy = boxes_xywh.copy()
+    else:
+        assert False, 'error: input must be a torch.Tensor or np.ndarray'
+
+    boxes_xyxy[:, 0] = boxes_xywh[:, 0] - boxes_xywh[:, 2] / 2.0  # xmin = x_center - width / 2
+    boxes_xyxy[:, 1] = boxes_xywh[:, 1] - boxes_xywh[:, 3] / 2.0  # ymin = y_center - height / 2
+    boxes_xyxy[:, 2] = boxes_xywh[:, 0] + boxes_xywh[:, 2] / 2.0  # xmax = x_center + width / 2
+    boxes_xyxy[:, 3] = boxes_xywh[:, 1] + boxes_xywh[:, 3] / 2.0  # ymax = y_center + height / 2
+
+    return boxes_xyxy
+
+
 
 def update_bounding_boxes(bounding_boxes, old_points, new_points, status):
     """
@@ -118,6 +134,7 @@ def tracking(prev_detection_frame, bbox, tracking_frame_list):
     key_points = select_key_points(bbox, grey_prev_frame)
     print(f'time2: {time.time() - time2}')
     time3 = time.time()
+    result = []
     for present_frame in tracking_frame_list:
         print(f'time3: {time.time() - time3}')
         time4 = time.time()
@@ -128,6 +145,7 @@ def tracking(prev_detection_frame, bbox, tracking_frame_list):
 
         if len(key_points) > 0 and len(new_points) > 0:
             bbox = update_bounding_boxes(bbox, key_points, new_points, status)
+            result.append(xywh_to_xyxy(np.asarray(bbox)))
         else:
             print('no bbox')
         print(f'time5: {time.time() - time5}')
@@ -137,3 +155,5 @@ def tracking(prev_detection_frame, bbox, tracking_frame_list):
         key_points = new_points[status == 1].reshape(-1, 1, 2)
 
         print(f'time6: {time.time() - time6}')
+
+    return result

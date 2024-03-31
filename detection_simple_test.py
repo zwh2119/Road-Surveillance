@@ -5,7 +5,6 @@ import cv2
 import os
 from tqdm import tqdm
 
-
 from car_detection.simple.car_detection import CarDetection as detection
 
 
@@ -104,7 +103,7 @@ def calculate_map(predictions, ground_truths, iou_threshold=0.5):
 def detection_tracking_delay_test():
     detector_simple = detection({
         'weights': 'yolov5s.pt',
-        'device': 2
+        'device': 0
     })
 
     video_dir = '/data/edge_computing_dataset/UA-DETRAC/Insight-MVT_Annotation_Train'
@@ -113,13 +112,11 @@ def detection_tracking_delay_test():
     # warm_up(detector_trt, video_dir, gt_file, 100)
     warm_up(detector_simple, video_dir, gt_file, 100)
 
-    result = None
+    result_detection = None
     prob = None
 
     detector_simple_delay = []
-    detector_trt_delay = []
-    tracker_simple_delay = []
-    tracker_trt_delay = []
+    detector_simple_acc = []
 
     with open(gt_file, 'r') as gt_f:
         gt = gt_f.readlines()
@@ -130,31 +127,26 @@ def detection_tracking_delay_test():
         pic_path = os.path.join(video_dir, info[0])
         frame = cv2.imread(pic_path)
 
-        # if result and prob:
-            # start_time = time.time()
-            # # tracker_simple.update(np.asarray(result), np.asarray(prob), frame)
-            # end_time = time.time()
-            # tracker_simple_delay.append(end_time - start_time)
-
-        # start_time = time.time()
-        # response = detector_trt([frame])
-        # result = response['result'][0]
-        # prob = response['probs'][0]
-        #
-        # end_time = time.time()
-        # detector_trt_delay.append(end_time - start_time)
+        bbox_gt = [float(b) for b in info[1:]]
+        boxes_gt = np.array(bbox_gt, dtype=np.float32).reshape(-1, 4)
+        frame_gt = []
+        for box in boxes_gt.tolist():
+            frame_gt.append({'bbox': box, 'class': 1})
 
         start_time = time.time()
         response = detector_simple([frame])
-        result = response['result'][0]
+        result_detection = response['result'][0]
         # print(len(result))
         prob = response['probs'][0]
+        prediction_detection = []
+        for box, score in zip(result_detection, prob):
+            prediction_detection.append({'bbox': box, 'prob': score, 'class': 1})
+        detector_simple_acc.append(calculate_map(prediction_detection, frame_gt))
 
         end_time = time.time()
         detector_simple_delay.append(end_time - start_time)
 
-    print(f'【detector】 simple:{np.mean(detector_simple_delay):.4f}s')
-
+    print(f'【detector】 delay:{np.mean(detector_simple_delay):.4f}s    map:{np.mean(detector_simple_acc)}')
 
 
 # def batch_delay_test():

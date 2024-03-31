@@ -111,8 +111,8 @@ def calculate_map(predictions, ground_truths, iou_threshold=0.5):
 
 def detection_tracking_delay_test():
     detector_trt = detection_trt({
-        'weights': '/home/nvidia/zwh/Auto-Edge/batch_test/yolov5s_batch1.engine',
-        'plugin_library': '/home/nvidia/zwh/Auto-Edge/batch_test/libbatch1plugins.so',
+        'weights': '/home/hx/zwh/Auto-Edge/batch_test/yolov5s_batch1.engine',
+        'plugin_library': '/home/hx/zwh/Auto-Edge/batch_test/libbatch1plugins.so',
         'batch_size': 1,
         'device': 0
     })
@@ -135,12 +135,16 @@ def detection_tracking_delay_test():
 
     warm_up(detector_trt, video_dir, gt_file, 100)
 
-    result = None
+    result_detection = None
     prob = None
+    result_tracking = None
 
     detector_trt_delay = []
     tracker_trt_delay = []
-    tracker_simple_delay = []
+    # tracker_simple_delay = []
+
+    detector_trt_acc = []
+    tracker_trt_acc = []
 
     with open(gt_file, 'r') as gt_f:
         gt = gt_f.readlines()
@@ -152,16 +156,29 @@ def detection_tracking_delay_test():
         pic_path = os.path.join(video_dir, info[0])
         prev_frame = frame
         frame = cv2.imread(pic_path)
+        # frame = cv2.resize(frame, (480, 360))
         print(f'frame size:{frame.shape}')
         # frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-        if result and prob:
+        bbox_gt = [float(b) for b in info[1:]]
+        boxes_gt = np.array(bbox_gt, dtype=np.float32).reshape(-1, 4)
+        frame_gt = []
+        for box in boxes_gt.tolist():
+            frame_gt.append({'bbox': box, 'class': 1})
+
+        if result_detection and prob:
             start_time = time.time()
 
             # tracker_trt.update(car_tracking_trt.xyxy_to_xywh(np.asarray(result)), prob, frame)
-            optical_flow.tracking(prev_frame, result, [frame])
+            response_tracking = optical_flow.tracking(prev_frame, result_detection, [frame])
             end_time = time.time()
             tracker_trt_delay.append(end_time - start_time)
+
+            result_tracking = response_tracking[0]
+            prediction_tracking =[]
+            for box, score in zip(result_tracking, prob):
+                prediction_tracking.append({'bbox': box, 'prob': score, 'class': 1})
+            tracker_trt_acc.append(calculate_map(prediction_tracking, frame_gt))
 
         # if result and prob:
         #     start_time = time.time()
@@ -171,16 +188,20 @@ def detection_tracking_delay_test():
 
         start_time = time.time()
         response = detector_trt([frame])
-        result = response['result'][0]
+        result_detection = response['result'][0]
         prob = response['probs'][0]
-        print(f'object number: {len(result)}')
+        print(f'object number: {len(result_detection)}')
+        prediction_detection = []
+        for box,score in zip(result_detection, prob):
+            prediction_detection.append({'bbox': box, 'prob': score, 'class': 1})
+        detector_trt_acc.append(calculate_map(prediction_detection, frame_gt))
 
         end_time = time.time()
         detector_trt_delay.append(end_time - start_time)
 
-    print(f'【detector】 trt:{np.mean(detector_trt_delay):.4f}s ')
+    print(f'【detector】 delay:{np.mean(detector_trt_delay):.4f}s    map:{np.mean(detector_trt_acc)}')
     # print(f'【tracker】  simple:{np.mean(tracker_simple_delay):.4f}s')
-    print(f'【tracker】  trt:{np.mean(tracker_trt_delay):.4f}s')
+    print(f'【tracker】  delay:{np.mean(tracker_trt_delay):.4f}s    map:{np.mean(tracker_trt_acc)}')
 
 
 def batch_delay_test():
