@@ -1,3 +1,4 @@
+import json
 import random
 import time
 
@@ -6,15 +7,12 @@ import cv2
 import os
 from tqdm import tqdm
 
-# from car_tracking.simple.deep_sort import build_tracker
-from car_detection.simple.car_detection import CarDetection as detection
 from car_detection.trt.car_detection_trt import CarDetection as detection_trt
-# from car_tracking.simple.utils.parser import get_config
-from car_tracking.trt import car_tracking_trt
 
-# from car_tracking.trt.deep_sort.utils.parser import get_config
-# from car_tracking.trt.deep_sort.deep_sort import DeepSort
 from car_tracking.optical_flow import optical_flow
+
+from road_surveillance import RoadSurveillance
+from road_surveillance_baseline import RoadSurveillanceBaseline
 
 
 def warm_up(model, base_dir, gt_path, warm_number):
@@ -111,8 +109,8 @@ def calculate_map(predictions, ground_truths, iou_threshold=0.5):
 
 def detection_tracking_delay_test():
     detector_trt = detection_trt({
-        'weights': '/home/hx/zwh/Auto-Edge/batch_test/yolov5s_batch1.engine',
-        'plugin_library': '/home/hx/zwh/Auto-Edge/batch_test/libbatch1plugins.so',
+        'weights': '/home/nvidia/zwh/Auto-Edge/batch_test/yolov5s_batch1.engine',
+        'plugin_library': '/home/nvidia/zwh/Auto-Edge/batch_test/libbatch1plugins.so',
         'batch_size': 1,
         'device': 0
     })
@@ -175,7 +173,7 @@ def detection_tracking_delay_test():
             tracker_trt_delay.append(end_time - start_time)
 
             result_tracking = response_tracking[0]
-            prediction_tracking =[]
+            prediction_tracking = []
             for box, score in zip(result_tracking, prob):
                 prediction_tracking.append({'bbox': box, 'prob': score, 'class': 1})
             tracker_trt_acc.append(calculate_map(prediction_tracking, frame_gt))
@@ -192,7 +190,7 @@ def detection_tracking_delay_test():
         prob = response['probs'][0]
         print(f'object number: {len(result_detection)}')
         prediction_detection = []
-        for box,score in zip(result_detection, prob):
+        for box, score in zip(result_detection, prob):
             prediction_detection.append({'bbox': box, 'prob': score, 'class': 1})
         detector_trt_acc.append(calculate_map(prediction_detection, frame_gt))
 
@@ -205,8 +203,154 @@ def detection_tracking_delay_test():
 
 
 def batch_delay_test():
-    server = RoadSurveillance
+    batch_list = [1, 2, 4, 6, 8, 10, 12, 14, 16]
+    frame_num = 1024
+    server = RoadSurveillance({
+        'weights': '/home/nvidia/zwh/Auto-Edge/batch_test/yolov5s_batch1.engine',
+        'plugin_library': '/home/nvidia/zwh/Auto-Edge/batch_test/libbatch1plugins.so',
+        'batch_size': 1,
+        'device': 0
+    })
+
+    video_dir = '/data/edge_computing_dataset/UA-DETRAC/Insight-MVT_Annotation_Train'
+    gt_file = '/data/edge_computing_dataset/UA-DETRAC/train_gt.txt'
+
+    with open(gt_file, 'r') as gt_f:
+        gt_file = gt_f.readlines()
+        gt_file = gt_file[:frame_num]
+
+    batch_delay = []
+    batch_acc = []
+    for batch in batch_list:
+        print(f'test for batch size of {batch}..')
+        frame_buffer = []
+        delay_buffer = []
+        acc_buffer = []
+        gt_buffer = []
+        for i in tqdm(gt_file):
+            info = i.split(' ')
+
+            pic_path = os.path.join(video_dir, info[0])
+            frame = cv2.imread(pic_path)
+
+            bbox_gt = [float(b) for b in info[1:]]
+            boxes_gt = np.array(bbox_gt, dtype=np.float32).reshape(-1, 4)
+            frame_gt = []
+            for box in boxes_gt.tolist():
+                frame_gt.append({'bbox': box, 'class': 1})
+
+            frame_buffer.append(frame)
+            gt_buffer.append(frame_gt)
+            if len(frame_buffer) == batch:
+                start_time = time.time()
+                response = server(frame_buffer)
+                # print(f'response:{response}')
+                end_time = time.time()
+                delay_buffer.append((end_time - start_time) * 1000 / batch)
+
+                prediction = []
+                for bbox in response['bbox']:
+                    pred = []
+                    # print(f'bbox:{bbox}, probs:{probs}')
+                    for box, score in zip(bbox, response['prob']):
+                        pred.append({'bbox': box, 'prob': score, 'class': 1})
+                    prediction.append(pred)
+
+                acc = []
+                for pred, gt in zip(prediction, gt_buffer):
+                    # print(f'pred: {pred}   gt:{gt}')
+                    acc.append(calculate_map(pred, gt))
+                acc_buffer.append(np.mean(acc))
+
+                frame_buffer = []
+                gt_buffer = []
+
+        batch_acc.append(np.mean(acc_buffer))
+        batch_delay.append(np.mean(delay_buffer))
+        print(f'batch {batch}:  delay:{np.mean(delay_buffer):.2f}ms    acc:{np.mean(acc_buffer):.4f}')
+    with open('detection_tracking_batch.json', 'w') as f:
+        json.dump({'delay': batch_delay, 'acc': batch_acc}, f)
+
+
+def batch_delay_test_baseline():
+    batch_list = [1, 2, 4, 6, 8, 10, 12, 14, 16]
+    frame_num = 1024
+    server = RoadSurveillanceBaseline({
+        'weights': '/home/nvidia/zwh/Auto-Edge/batch_test/yolov5s_batch1.engine',
+        'plugin_library': '/home/nvidia/zwh/Auto-Edge/batch_test/libbatch1plugins.so',
+        'batch_size': 1,
+        'device': 0
+    })
+
+    video_dir = '/data/edge_computing_dataset/UA-DETRAC/Insight-MVT_Annotation_Train'
+    gt_file = '/data/edge_computing_dataset/UA-DETRAC/train_gt.txt'
+
+    with open(gt_file, 'r') as gt_f:
+        gt_file = gt_f.readlines()
+        gt_file = gt_file[:frame_num]
+
+    batch_delay = []
+    batch_acc = []
+    for batch in batch_list:
+        print(f'test for batch size of {batch}..')
+        frame_buffer = []
+        delay_buffer = []
+        acc_buffer = []
+        gt_buffer = []
+        for i in tqdm(gt_file):
+            info = i.split(' ')
+
+            pic_path = os.path.join(video_dir, info[0])
+            frame = cv2.imread(pic_path)
+
+            bbox_gt = [float(b) for b in info[1:]]
+            boxes_gt = np.array(bbox_gt, dtype=np.float32).reshape(-1, 4)
+            frame_gt = []
+            for box in boxes_gt.tolist():
+                frame_gt.append({'bbox': box, 'class': 1})
+
+            frame_buffer.append(frame)
+            gt_buffer.append(frame_gt)
+            if len(frame_buffer) == batch:
+                start_time = time.time()
+                response = server(frame_buffer)
+                # print(f'response:{response}')
+                end_time = time.time()
+                delay_buffer.append((end_time - start_time) * 1000 / batch)
+
+                prediction = []
+                for bbox in response['bbox']:
+                    pred = []
+                    # print(f'bbox:{bbox}, probs:{probs}')
+                    for box, score in zip(bbox, response['prob']):
+                        pred.append({'bbox': box, 'prob': score, 'class': 1})
+                    prediction.append(pred)
+
+                prediction = []
+                for bbox, probs in zip(response['bbox'], response['prob']):
+                    pred = []
+                    # print(f'bbox:{bbox}, probs:{probs}')
+                    for box, score in zip(bbox, probs):
+                        pred.append({'bbox': box, 'prob': score, 'class': 1})
+                    prediction.append(pred)
+
+                acc = []
+                for pred, gt in zip(prediction, gt_buffer):
+                    # print(f'pred: {pred}   gt:{gt}')
+                    acc.append(calculate_map(pred, gt))
+                acc_buffer.append(np.mean(acc))
+
+                frame_buffer = []
+                gt_buffer = []
+
+        batch_acc.append(np.mean(acc_buffer))
+        batch_delay.append(np.mean(delay_buffer))
+        print(f'batch {batch}:  delay:{np.mean(delay_buffer):.2f}ms    acc:{np.mean(acc_buffer):.4f}')
+    with open('detection_tracking_batch_baseline.json', 'w') as f:
+        json.dump({'delay': batch_delay, 'acc': batch_acc}, f)
 
 
 if __name__ == '__main__':
-    detection_tracking_delay_test()
+    # detection_tracking_delay_test()
+    batch_delay_test()
+    # batch_delay_test_baseline()

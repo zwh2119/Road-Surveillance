@@ -120,40 +120,42 @@ def select_key_points(bounding_boxes, gray_image, max_corners=40, quality_level=
         # If no points were found, return an empty array with the correct shape
         points = np.empty((0, 1, 2), dtype=np.float32)
 
-    print(f'total points: {len(points)}')
+    # print(f'total points: {len(points)}')
     return points
 
 
 def tracking(prev_detection_frame, bbox, tracking_frame_list):
+    if not tracking_frame_list:
+        return []
     bbox = xyxy_to_xywh(np.asarray(bbox))
-    print(bbox)
-    time1 = time.time()
+    # print(bbox)
+    # time1 = time.time()
     grey_prev_frame = cv2.cvtColor(prev_detection_frame, cv2.COLOR_BGR2GRAY)
-    print(f'time1: {time.time() - time1}')
-    time2 = time.time()
+    # print(f'time1: {time.time() - time1}')
+    # time2 = time.time()
     key_points = select_key_points(bbox, grey_prev_frame)
-    print(f'time2: {time.time() - time2}')
-    time3 = time.time()
+    # print(f'time2: {time.time() - time2}')
+    # time3 = time.time()
     result = []
     for present_frame in tracking_frame_list:
-        print(f'time3: {time.time() - time3}')
-        time4 = time.time()
+        # print(f'time3: {time.time() - time3}')
+        # time4 = time.time()
         grey_present_frame = cv2.cvtColor(present_frame, cv2.COLOR_BGR2GRAY)
         new_points, status, error = cv2.calcOpticalFlowPyrLK(grey_prev_frame, grey_present_frame, key_points, None)
-        print(f'time4: {time.time() - time4}')
-        time5 = time.time()
+        # print(f'time4: {time.time() - time4}')
+        # time5 = time.time()
 
         if len(key_points) > 0 and len(new_points) > 0:
             bbox = update_bounding_boxes(bbox, key_points, new_points, status)
             result.append(xywh_to_xyxy(np.asarray(bbox)))
         else:
             print('no bbox')
-        print(f'time5: {time.time() - time5}')
-        time6 = time.time()
+        # print(f'time5: {time.time() - time5}')
+        # time6 = time.time()
 
         grey_prev_frame = grey_present_frame.copy()
         key_points = new_points[status == 1].reshape(-1, 1, 2)
 
-        print(f'time6: {time.time() - time6}')
+        # print(f'time6: {time.time() - time6}')
 
     return result
