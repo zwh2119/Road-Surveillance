@@ -182,6 +182,7 @@ def detection_tracking_delay_test(detector_trt=None, resolution=None):
             response_tracking = optical_flow.tracking(prev_frame, result_detection, [frame])
             end_time = time.time()
             tracker_trt_delay.append(end_time - start_time)
+            # print(f'tracker time: {end_time - start_time}')
 
             result_tracking = response_tracking[0]
             prediction_tracking = []
@@ -413,7 +414,7 @@ def detection_tracking_resolution_test():
 
 
 if __name__ == '__main__':
-    # detection_tracking_delay_test()
+    detection_tracking_delay_test()
     # batch_delay_test()
     # batch_delay_test_baseline()
-    detection_tracking_resolution_test()
+    # detection_tracking_resolution_test()

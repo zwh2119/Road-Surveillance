@@ -133,7 +133,7 @@ def tracking(prev_detection_frame, bbox, tracking_frame_list):
     grey_prev_frame = cv2.cvtColor(prev_detection_frame, cv2.COLOR_BGR2GRAY)
     # print(f'time1: {time.time() - time1}')
     # time2 = time.time()
-    key_points = select_key_points(bbox, grey_prev_frame)
+    key_points = select_key_points(bbox, grey_prev_frame, max_corners=max(len(bbox)*5,50))
     # print(f'time2: {time.time() - time2}')
     # time3 = time.time()
     result = []
